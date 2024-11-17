@@ -1,7 +1,8 @@
 ---
-area: Seguridad En Aplicaciones Web
+area: Simulacion
 nodo: 
 tags:
+  - segundo-parcial
 ---
 
 ```dataviewjs
@@ -155,6 +156,7 @@ if (self.area) {
         .map(p => p.file.link.path)
     )]
     .map(path => new Node(path, pages, getPage(path), tags))
+    .filter(node => node.children.length == 0)
     .filter(node => node.isValid);
 
     

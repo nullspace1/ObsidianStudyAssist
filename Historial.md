@@ -1,5 +1,5 @@
 ---
-dias: "10"
+dias: "7"
 sort: desc
 area: Simulacion
 ---
