@@ -1,8 +1,7 @@
 ---
 area: Plataformas de Virtualizacion
-reset: 147
+reset: 124
 tags: 
-ignoreTags: 
 intervals:
   - "0"
   - "1"
@@ -12,7 +11,7 @@ intervals:
   - "30"
   - "45"
 nodos: 
-revisitInterval: 3
+revisitInterval: 4
 startingNode: 
 ---
 
@@ -40,6 +39,8 @@ async function incrementReset() {
     app.workspace.activeLeaf.update();
 }
 
+
+
 // Function to reset the study session
 async function resetSession() {
     await app.fileManager.processFrontMatter(metadataFileFullPath, (fm) => {
@@ -56,7 +57,7 @@ async function resetSession() {
 const incrementButton = createButton({
     app,
     el: this.container,
-    args: { name: "Increment Reset" },
+    args: { name: "Next Note" },
     clickOverride: {
         click: incrementReset,
         params: []
@@ -84,7 +85,6 @@ const targetArea = curr.area;
 const today = new Date().toISOString().split('T')[0];
 const resetKey = curr.reset;
 const tagFilters = curr.tags || [];
-const ignoreTagFilters = curr.ignoreTags || [];
 const nodoFilters = curr.nodos || [];
 const intervals = curr.intervals ? curr.intervals : [1, 3, 5, 7];
 
@@ -132,12 +132,30 @@ function nodeHasParentInFilter(page, visited = new Set()) {
     return false;
 }
 
-let pagesInArea = dv.pages().filter(p => p.file.folder.startsWith(targetArea));
+let pagesInArea = dv.pages().filter(p => p.file.folder.startsWith(targetArea) && p.nodos);
+
+async function resetAllPages() {
+	for(let i = 0; i < pagesInArea.length; i++){
+		const file = app.vault.getAbstractFileByPath(pagesInArea[i].file.path);
+	    await app.fileManager.processFrontMatter(file, (fm) => {
+	        fm.intervalIndex = 0;
+	    });
+	}
+}
+
+const resetAllButton = createButton({
+    app,
+    el: this.container,
+    args: { name: "Reset ALL Pages" },
+    clickOverride: {
+        click: resetAllPages,
+        params: []
+    }
+});
 
 if (tagFilters.length > 0) {
     pagesInArea = pagesInArea.filter(p =>
-        tagFilters.every(tag => p.tags && p.tags.includes(tag)) &&
-        !ignoreTagFilters.some(tagign => p.tags && p.tags.includes(tagign))
+        tagFilters.every(tag => p.tags && p.tags.includes(tag))
     );
 }
 
@@ -146,6 +164,8 @@ if (nodoFilters.length > 0) {
 }
 
 let duePages = pagesInArea.filter(p => isDueForReview(p));
+
+dv.paragraph(`Paginas Faltantes: ${duePages.length}`)
 
 if (targetArea !== lastTargetArea) {
     visitedPages = [];
@@ -165,15 +185,39 @@ if (targetArea !== lastTargetArea) {
 
 if (!selectedPagePath || lastReset !== resetKey) {
 
+	pagesSinceLastRevisit = (pagesSinceLastRevisit || 0) + 1;
+
     if (duePages.length === 0) {
         dv.paragraph("No more pages are due for review!");
         traversalStack = [];
         selectedPagePath = null;
     } else {
 
+	if (pagesSinceLastRevisit >= revisitInterval && visitedPages.length > 1) {
+		pagesSinceLastRevisit = 0;
+	    let oldPages = visitedPages.slice(0, visitedPages.length - 1);
+	    if (oldPages.length > 0) {
+        // Select a random index with a bias towards earlier indices
+	        let index = Math.floor( (Math.random() ** 2) * oldPages.length);
+	        let revisitPagePath = oldPages[index];
+	
+	        // Perform swap directly on visitedPages
+	        if (index + 1 < visitedPages.length) {
+	            let temp = visitedPages[index + 1];
+	            visitedPages[index + 1] = visitedPages[index];
+	            visitedPages[index] = temp;
+		        }
+	// Fetch the page and check if it is due for review
+		        let revisitPage = dv.page(revisitPagePath);
+		        if (revisitPage) {
+		            selectedPagePath = revisitPage.file.path;// Optionally, do not update the intervalIndex for revisited pages
+			    }
+			}
+		} else {
+
         if (traversalStack.length === 0) {
             // Randomly select a starting node from duePages
-            let availableStartNodes = duePages.filter(p => !visitedPages.includes(p.file.path) && (!p.nodos || !p.nodos.some(n => dv.page(n.path) != undefined)));
+            let availableStartNodes = duePages.filter(p =>!visitedPages.includes(p.file.path) && !p.nodos.some(n => dv.page(n.path) && duePages.includes(dv.page(n.path)) && !visitedPages.includes(n.path)));
             if (availableStartNodes.length > 0) {
                 let randomIndex = Math.floor(Math.random() * availableStartNodes.length);
                 let startNode = availableStartNodes[randomIndex];
@@ -187,7 +231,7 @@ if (!selectedPagePath || lastReset !== resetKey) {
                 });
             } else {
                 dv.paragraph("No more pages to study!");
-                traversalStack = [];
+            traversalStack = [];
             }
         }
 
@@ -208,7 +252,7 @@ if (!selectedPagePath || lastReset !== resetKey) {
             visitedPages.push(selectedPagePath);
 
             // Update page's review information
-            pagesSinceLastRevisit = (pagesSinceLastRevisit || 0) + 1;
+
             const selectedFile = app.vault.getAbstractFileByPath(selectedPagePath);
             await app.fileManager.processFrontMatter(selectedFile, (fm) => {
                 fm["ultima_revision"] = today;
@@ -246,19 +290,12 @@ if (!selectedPagePath || lastReset !== resetKey) {
         }
 
         // Revisit Logic: Revisit an old page every N revisions
-        if (pagesSinceLastRevisit >= revisitInterval && visitedPages.length > 1) {
-            pagesSinceLastRevisit = 0;
-            let oldPages = visitedPages.slice(0, visitedPages.length - 1);
-            let revisitPagePath = oldPages[Math.floor(Math.random() * oldPages.length)];
-            let revisitPage = dv.page(revisitPagePath);
-            if (revisitPage && isDueForReview(revisitPage)) {
-                selectedPagePath = revisitPage.file.path;
-                // Optionally, do not update the intervalIndex for revisited pages
-            }
-        }
+        
 
         // Update metadata with selected page and traversal state
-        await app.fileManager.processFrontMatter(metadataFileFullPath, (fm) => {
+        
+        }
+    await app.fileManager.processFrontMatter(metadataFileFullPath, (fm) => {
             fm.selectedPagePath = selectedPagePath;
             fm.lastReset = resetKey;
             fm.visitedPages = visitedPages;
@@ -271,6 +308,7 @@ if (!selectedPagePath || lastReset !== resetKey) {
 
 if (selectedPagePath) {
     const pageObj = dv.page(selectedPagePath);
+
     if (pageObj.preguntas && pageObj.preguntas.length > 0) {
         dv.header(1, "Preguntas");
         dv.list(pageObj.preguntas);
@@ -282,7 +320,7 @@ if (selectedPagePath) {
         dv.header(3, "Nodos Padre");
         dv.list(nodos);
     }
-    const backlinks = dv.pages().filter(p => p.nodos && p.nodos.includes(pageObj.file.path));
+    const backlinks = dv.pages().filter(p => p.nodos && p.nodos.some(n => n.path == pageObj.file.path));
     if (backlinks.length > 0) {
         dv.header(3, "Nodos Hijo");
         dv.list(backlinks.map(back => back.file.link));
@@ -291,5 +329,15 @@ if (selectedPagePath) {
         dv.header(3, "Relacionados");
         dv.list(pageObj.relacionado);
     }
+
+	dv.paragraph("-----------")
+
+    dv.paragraph(`Proxima review: ${new Date(new Date(pageObj.ultima_revision).getTime() + 86400000 * intervals[pageObj.intervalIndex]).toLocaleDateString('en-GB')}`)
 }
+
+dv.paragraph("------------")
+
+dv.paragraph(resetAllButton)
+
+
 ```

@@ -1,7 +1,8 @@
 ---
-dias: "7"
+dias:
+  - "7"
 sort: desc
-area: Simulacion
+area: Plataformas de Virtualizacion
 ---
 
 ```dataviewjs
