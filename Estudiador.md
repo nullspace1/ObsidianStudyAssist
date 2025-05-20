@@ -1,343 +1,318 @@
 ---
-area: Plataformas de Virtualizacion
-reset: 124
-tags: 
+area: Administracion Gerencial
+reset: 254
 intervals:
-  - "0"
-  - "1"
+  - "-1"
   - "3"
   - "7"
-  - "12"
-  - "30"
-  - "45"
-nodos: 
-revisitInterval: 4
-startingNode: 
+  - "15"
+grace: 3
+tags:
+  - primer-parcial
 ---
 
 ```dataviewjs
-// Import the required plugins
-const { createButton } = app.plugins.plugins["buttons"];
+const {NodeHandler,MetadataWriter,UIHandler,Estudiador} = await cJS()
 
-const currFilePath = dv.current().file.path;
-const metadataFilePath = 'Resources/EstudiadorData';
-let metadataPage = dv.page(metadataFilePath);
+const curr = dv.current()
 
-if (!metadataPage) {
-    dv.paragraph(`Error: Metadata file '${metadataFilePath}' not found.`);
-    return;
+const META_PATH = 'Resources/EstudiadorData.md'
+
+const CURR_PATH = curr.file.path
+
+const DEFAULT_DATA = [{name: 'stack',value: []},{name: 'currentPage',value: null},{name: 'visited',value: []}, {name: 'reset', value: curr.reset}, {name: 'area', value: curr.area}]
+
+const TODAY = new Date().toISOString().split('T')[0];
+
+  
+
+NodeHandler.configure(dv,curr.area,curr.tags)
+
+Estudiador.configure(NodeHandler.pages)
+
+MetadataWriter.configure(dv,app)
+
+UIHandler.configure(app,this)
+
+const visited = MetadataWriter.read(META_PATH,'visited')
+
+NodeHandler.pages = Estudiador.getPagesToStudy(NodeHandler.pages,visited,curr.intervals)
+
+for (const page of Estudiador.getOverduePages(curr.intervals,curr.grace)){
+
+    await MetadataWriter.write(page.file.path,[{name: 'intervalIndex', value: 0}])
+
 }
 
-const metadataFileFullPath = app.vault.getAbstractFileByPath(metadataFilePath + '.md');
+  
 
-// Function to increment the 'reset' value
-async function incrementReset() {
-    const file = app.vault.getAbstractFileByPath(currFilePath);
-    await app.fileManager.processFrontMatter(file, (fm) => {
-        fm.reset = (fm.reset || 0) + 1;
-    });
-    app.workspace.activeLeaf.update();
+dv.paragraph(UIHandler.button('Next Page',
+
+    async () => {
+
+        await MetadataWriter.write(CURR_PATH,[{name: 'reset', value: MetadataWriter.read(CURR_PATH,'reset') + 1}])
+
+    }, []))
+
+  
+
+dv.paragraph(UIHandler.button('Reset Session',
+
+    async () => {
+
+        await MetadataWriter.write(META_PATH, DEFAULT_DATA)
+
+    }, []))
+
+  
+  
+
+if (curr.area != MetadataWriter.read(META_PATH,'area')) {
+
+    await MetadataWriter.write(META_PATH,DEFAULT_DATA)
+
 }
 
+  
+
+let pagePath = MetadataWriter.read(META_PATH,'currentPage');
+
+let page = pagePath ? dv.page(pagePath) : null;
+
+  
+
+if (curr.reset != MetadataWriter.read(META_PATH,'reset') || page == null) {
+
+    await MetadataWriter.write(META_PATH,[{name: 'reset',value:curr.reset}])
+
+    const stack = MetadataWriter.read(META_PATH,'stack')
+
+    if (stack == null || stack.length == 0) {
+
+        const roots = NodeHandler.getRoots()
+
+  
+
+        if (roots.length > 0) {
+
+            page = NodeHandler.randomPage(roots)
+
+            await MetadataWriter
+
+            .write(META_PATH,[
+
+            {
+
+            name: 'stack',
+
+            value: NodeHandler.getVisibleChildren(page).map(p => p.file.path).concat(NodeHandler.getSiblings(page).map(p => p.file.path))
+
+            }
+
+            ])
+
+        } else {
+
+            page = null
+
+        }
+
+  
+
+    } else {
+
+        page = dv.page(stack.shift())
+
+        await MetadataWriter
+
+        .write(META_PATH,[
+
+        {
+
+        name: 'stack',
+
+        value: NodeHandler.getVisibleChildren(page).map(p => p.file.path).concat(stack)
+
+        }
+
+        ])
+
+    }
 
 
-// Function to reset the study session
-async function resetSession() {
-    await app.fileManager.processFrontMatter(metadataFileFullPath, (fm) => {
-        fm.visitedPages = [];
-        fm.traversalStack = [];
-        fm.selectedPagePath = null;
-        fm.lastReset = null;
-        fm.pagesSinceLastRevisit = 0;
-    });
-    app.workspace.activeLeaf.update();
+    if (page != null) {
+
+        if (visited != null) {
+
+            visited.push(page.file.path)
+
+        }
+
+        await MetadataWriter
+
+            .write(META_PATH,[
+
+            {
+
+            name:'currentPage',
+
+            value: page.file.path
+
+            },
+
+            {
+
+            name: 'visited',
+
+            value: visited == null ? [page.file.path] : visited
+
+            }
+
+            ])
+
+  
+
+                await MetadataWriter
+
+            .write(page.file.path, [
+
+            {
+
+            name: 'ultima_revision',
+
+            value: TODAY
+
+            },
+
+            {
+
+            name: 'intervalIndex',
+
+            value: page.intervalIndex + 1
+
+            }
+
+            ])
+
+    } else {
+
+        await MetadataWriter
+
+            .write(META_PATH,[
+
+            {
+
+            name:'currentPage',
+
+            value: null
+
+            }
+
+            ])
+
+    }
+
 }
 
-// Create the 'Increment Reset' button
-const incrementButton = createButton({
-    app,
-    el: this.container,
-    args: { name: "Next Note" },
-    clickOverride: {
-        click: incrementReset,
-        params: []
-    }
-});
+  
 
-// Create the 'Reset Study Session' button
-const resetButton = createButton({
-    app,
-    el: this.container,
-    args: { name: "Reset Study Session" },
-    clickOverride: {
-        click: resetSession,
-        params: []
-    }
-});
+if (page == null) {
 
-// Display the buttons
-dv.paragraph(incrementButton);
-dv.paragraph(resetButton);
+    dv.header(1,'Sin mas paginas para revisar esta sesion.')
 
-// Main script starts here
-const curr = dv.current();
-const targetArea = curr.area;
-const today = new Date().toISOString().split('T')[0];
-const resetKey = curr.reset;
-const tagFilters = curr.tags || [];
-const nodoFilters = curr.nodos || [];
-const intervals = curr.intervals ? curr.intervals : [1, 3, 5, 7];
+    dv.header(2,'Recuerde reiniciar la sesion si cree que falta revisar alguna pagina.')
 
-let selectedPagePath = metadataPage.selectedPagePath || null;
-let lastReset = metadataPage.lastReset || null;
-let visitedPages = metadataPage.visitedPages || [];
-let lastTargetArea = metadataPage.lastTargetArea || null;
-let pagesSinceLastRevisit = metadataPage.pagesSinceLastRevisit || 0;
-let traversalStack = metadataPage.traversalStack || [];
-const revisitInterval = curr.revisitInterval || 5;
+    dv.table(['Nombre','Siguiente Fecha de Estudio'], NodeHandler.unfilteredPages.map(p => [p.file.name, Estudiador.nextStudyDate(p,curr.intervals)]))
 
-function isDueForReview(page) {
-    // If the page lacks 'ultima_revision' or 'intervalIndex', consider it due for review
-    if (!page.ultima_revision || page.intervalIndex === undefined) return true;
-    const lastRevisionDate = new Date(page.ultima_revision);
-    let idx = page.intervalIndex;
-    if (idx >= intervals.length) idx = intervals.length - 1;
-    const intervalDays = intervals[idx];
-    const nextReviewDate = new Date(lastRevisionDate.getTime() + intervalDays * 86400000); // 86400000 ms in a day
-    return nextReviewDate <= new Date();
+} else {
+
+  
+
+    dv.paragraph('Paginas restantes: ' + NodeHandler.pages.length)
+
+  
+
+    if (page.preguntas && page.preguntas.length > 0) {
+
+        dv.header(1, "Preguntas");
+
+        dv.paragraph(page.preguntas);
+
+    }
+
+  
+
+    dv.header(2, `[[${page.file.name}]]`);
+
+    dv.paragraph(`![[${page.file.name}]]`);
+
+  
+
+  const nodos = page.nodos;
+
+  
+
+  if (nodos && nodos.length > 0) {
+
+    dv.header(3, "Nodos Padre");
+
+    dv.paragraph(nodos);
+
+  }
+
+  
+
+  const backlinks = NodeHandler.getAllChildren(page)
+
+  
+
+  if (backlinks.length > 0) {
+
+    dv.header(3, "Nodos Hijo");
+
+    dv.paragraph(backlinks.map(back => back.file.link));
+
+  }
+
+  
+
+  if (page.relacionado) {
+
+    dv.header(3, "Relacionados");
+
+    dv.paragraph(page.relacionado);
+
+  }
+
+  
+
+  dv.paragraph("-----------")
+
+  
+
+  dv.paragraph(`Proxima review: ${Estudiador.nextStudyDate(page,curr.intervals)}`)
+
 }
 
-function getChildren(nodePath) {
-    let page = dv.page(nodePath);
-    if (!page) return [];
-    let backlinks = dv.pages().filter(p => p.nodos && p.nodos.some(n => n.path == page.file.path));
-    return backlinks
-        .filter(p => !visitedPages.includes(p.file.path))
-        .filter(p => isDueForReview(p)) // Only include pages that are due
-        .map(p => p.file.path);
-}
+  
 
-function nodeHasParentInFilter(page, visited = new Set()) {
-    if (!page) return false;
-    if (visited.has(page.file.path)) return false;
-    visited.add(page.file.path);
-    if (nodoFilters.some(nf => page.file.path === nf.path)) return true;
-    if (page.nodos && page.nodos.length > 0) {
-        return page.nodos.some(np => {
-            let parentPage = dv.page(np);
-            if (!parentPage) return false;
-            return nodeHasParentInFilter(parentPage, visited);
-        });
-    }
-    return false;
-}
+dv.paragraph(UIHandler.button('Reset all indices',
 
-let pagesInArea = dv.pages().filter(p => p.file.folder.startsWith(targetArea) && p.nodos);
+    async () => {
 
-async function resetAllPages() {
-	for(let i = 0; i < pagesInArea.length; i++){
-		const file = app.vault.getAbstractFileByPath(pagesInArea[i].file.path);
-	    await app.fileManager.processFrontMatter(file, (fm) => {
-	        fm.intervalIndex = 0;
-	    });
-	}
-}
+        const pages = NodeHandler.unfilteredPages
 
-const resetAllButton = createButton({
-    app,
-    el: this.container,
-    args: { name: "Reset ALL Pages" },
-    clickOverride: {
-        click: resetAllPages,
-        params: []
-    }
-});
+        for (const page of pages) {
 
-if (tagFilters.length > 0) {
-    pagesInArea = pagesInArea.filter(p =>
-        tagFilters.every(tag => p.tags && p.tags.includes(tag))
-    );
-}
+            await MetadataWriter.write(page.file.path, [{name: 'intervalIndex', value: 0}])
 
-if (nodoFilters.length > 0) {
-    pagesInArea = pagesInArea.filter(p => nodeHasParentInFilter(p));
-}
+        }
 
-let duePages = pagesInArea.filter(p => isDueForReview(p));
+        await MetadataWriter.write(META_PATH, DEFAULT_DATA)
 
-dv.paragraph(`Paginas Faltantes: ${duePages.length}`)
+        await MetadataWriter.write(CURR_PATH,[{name: 'reset', value: MetadataWriter.read(CURR_PATH,'reset') + 1}] )
 
-if (targetArea !== lastTargetArea) {
-    visitedPages = [];
-    selectedPagePath = null;
-    lastReset = null;
-    pagesSinceLastRevisit = 0;
-    traversalStack = [];
-    await app.fileManager.processFrontMatter(metadataFileFullPath, (fm) => {
-        fm.lastTargetArea = targetArea;
-        fm.visitedPages = visitedPages;
-        fm.selectedPagePath = selectedPagePath;
-        fm.lastReset = lastReset;
-        fm.pagesSinceLastRevisit = pagesSinceLastRevisit;
-        fm.traversalStack = traversalStack;
-    });
-}
+    }
 
-if (!selectedPagePath || lastReset !== resetKey) {
-
-	pagesSinceLastRevisit = (pagesSinceLastRevisit || 0) + 1;
-
-    if (duePages.length === 0) {
-        dv.paragraph("No more pages are due for review!");
-        traversalStack = [];
-        selectedPagePath = null;
-    } else {
-
-	if (pagesSinceLastRevisit >= revisitInterval && visitedPages.length > 1) {
-		pagesSinceLastRevisit = 0;
-	    let oldPages = visitedPages.slice(0, visitedPages.length - 1);
-	    if (oldPages.length > 0) {
-        // Select a random index with a bias towards earlier indices
-	        let index = Math.floor( (Math.random() ** 2) * oldPages.length);
-	        let revisitPagePath = oldPages[index];
-	
-	        // Perform swap directly on visitedPages
-	        if (index + 1 < visitedPages.length) {
-	            let temp = visitedPages[index + 1];
-	            visitedPages[index + 1] = visitedPages[index];
-	            visitedPages[index] = temp;
-		        }
-	// Fetch the page and check if it is due for review
-		        let revisitPage = dv.page(revisitPagePath);
-		        if (revisitPage) {
-		            selectedPagePath = revisitPage.file.path;// Optionally, do not update the intervalIndex for revisited pages
-			    }
-			}
-		} else {
-
-        if (traversalStack.length === 0) {
-            // Randomly select a starting node from duePages
-            let availableStartNodes = duePages.filter(p =>!visitedPages.includes(p.file.path) && !p.nodos.some(n => dv.page(n.path) && duePages.includes(dv.page(n.path)) && !visitedPages.includes(n.path)));
-            if (availableStartNodes.length > 0) {
-                let randomIndex = Math.floor(Math.random() * availableStartNodes.length);
-                let startNode = availableStartNodes[randomIndex];
-                traversalStack.push({
-                    node: startNode.file.path,
-                    children: [], // We'll get children when we visit this node
-                });
-                // Save traversal stack to metadata
-                await app.fileManager.processFrontMatter(metadataFileFullPath, (fm) => {
-                    fm.traversalStack = traversalStack;
-                });
-            } else {
-                dv.paragraph("No more pages to study!");
-            traversalStack = [];
-            }
-        }
-
-        let foundNextPage = false;
-        while (traversalStack.length > 0) {
-            let current = traversalStack.pop(); // Pop the node from the stack
-            let page = dv.page(current.node);
-
-            if (!page) continue;
-
-            // Skip pages that are not due or already visited
-            if (!isDueForReview(page) || visitedPages.includes(page.file.path)) {
-                continue;
-            }
-
-            // Visit the page
-            selectedPagePath = page.file.path;
-            visitedPages.push(selectedPagePath);
-
-            // Update page's review information
-
-            const selectedFile = app.vault.getAbstractFileByPath(selectedPagePath);
-            await app.fileManager.processFrontMatter(selectedFile, (fm) => {
-                fm["ultima_revision"] = today;
-                let idx = fm.intervalIndex !== undefined ? fm.intervalIndex : -1;
-                idx += 1;
-                if (idx >= intervals.length) idx = intervals.length - 1;
-                fm.intervalIndex = idx;
-            });
-
-            foundNextPage = true;
-
-            // Get children and push them onto the stack
-            let children = getChildren(page.file.path);
-            for (let childPath of children) {
-                traversalStack.push({
-                    node: childPath,
-                });
-            }
-
-            // Save traversal stack to metadata
-            await app.fileManager.processFrontMatter(metadataFileFullPath, (fm) => {
-                fm.traversalStack = traversalStack;
-            });
-
-            break; // We've found the next page to display
-        }
-
-        if (!foundNextPage) {
-            // No more pages in traversal stack
-            traversalStack = [];
-            selectedPagePath = null;
-            await app.fileManager.processFrontMatter(metadataFileFullPath, (fm) => {
-                fm.traversalStack = traversalStack;
-            });
-        }
-
-        // Revisit Logic: Revisit an old page every N revisions
-        
-
-        // Update metadata with selected page and traversal state
-        
-        }
-    await app.fileManager.processFrontMatter(metadataFileFullPath, (fm) => {
-            fm.selectedPagePath = selectedPagePath;
-            fm.lastReset = resetKey;
-            fm.visitedPages = visitedPages;
-            fm.lastTargetArea = targetArea;
-            fm.pagesSinceLastRevisit = pagesSinceLastRevisit;
-            fm.traversalStack = traversalStack;
-        });
-    }
-}
-
-if (selectedPagePath) {
-    const pageObj = dv.page(selectedPagePath);
-
-    if (pageObj.preguntas && pageObj.preguntas.length > 0) {
-        dv.header(1, "Preguntas");
-        dv.list(pageObj.preguntas);
-    }
-    dv.header(2, `[[${pageObj.file.name}]]`);
-    dv.paragraph(`![[${pageObj.file.name}]]`);
-    const nodos = pageObj.nodos;
-    if (nodos && nodos.length > 0) {
-        dv.header(3, "Nodos Padre");
-        dv.list(nodos);
-    }
-    const backlinks = dv.pages().filter(p => p.nodos && p.nodos.some(n => n.path == pageObj.file.path));
-    if (backlinks.length > 0) {
-        dv.header(3, "Nodos Hijo");
-        dv.list(backlinks.map(back => back.file.link));
-    }
-    if (pageObj.relacionado) {
-        dv.header(3, "Relacionados");
-        dv.list(pageObj.relacionado);
-    }
-
-	dv.paragraph("-----------")
-
-    dv.paragraph(`Proxima review: ${new Date(new Date(pageObj.ultima_revision).getTime() + 86400000 * intervals[pageObj.intervalIndex]).toLocaleDateString('en-GB')}`)
-}
-
-dv.paragraph("------------")
-
-dv.paragraph(resetAllButton)
-
-
+, []))
 ```

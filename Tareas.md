@@ -2,7 +2,10 @@
 areas: 
 importantes: false
 review_filter:
-  - Matematica
+  - Proyecto Final
+  - PIS
+  - Administracion Gerencial
+  - Sistemas de Costos y Presupuesto
 ---
 
 ```dataviewjs
@@ -80,12 +83,12 @@ const current = dv.current()
 
 const intervals = estudiadorPage.intervals
 
-const pages = dv.pages().filter(p => current.review_filter.some(rf => p.file.path.startsWith(rf)))
+const pages = dv.pages().filter(p => current.review_filter.some(rf => p.file.path.startsWith(rf) && p.nodos))
 
 const map = new Map()
 
 
-for (const page of pages) {
+for (const page of pages) { 
      const folder = page.file.path.split("/")[0]
      map.set(folder,[...(map.get(folder) || []), page])
 }
@@ -93,21 +96,14 @@ for (const page of pages) {
   
 
 function isDueForReview(page) {// If the page lacks 'ultima_revision' or 'intervalIndex', consider it due for review
-
-    if (!page.ultima_revision || page.intervalIndex === undefined) return false;
-
-    const lastRevisionDate = new Date(page.ultima_revision);
-
-    let idx = page.intervalIndex;
-
-    if (idx >= intervals.length) idx = intervals.length - 1;
-
-    const intervalDays = intervals[idx];
-
-    const nextReviewDate = new Date(lastRevisionDate.getTime() + intervalDays * 86400000); // 86400000 ms in a day
-
-    return nextReviewDate <= new Date();
-
+    if (!page.ultima_revision || page.intervalIndex === undefined) return true;
+    const lastRevisionDate = new Date(page.ultima_revision);
+    let idx = page.intervalIndex;
+    if (idx >= intervals.length) idx = intervals.length - 1;
+    const intervalDays = intervals[idx];
+    const nextReviewDate = new Date(0); 
+    nextReviewDate.setTime(lastRevisionDate.getTime() + intervalDays * 1000 * 60 * 60 * 24)// 86400000 ms in a day
+    return nextReviewDate.getTime() <= new Date().getTime();
 }
 
   
